@@ -1,0 +1,65 @@
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getUserData, storeUserData, getAuthToken, storeAuthToken, clearAuthData, fetchUserFromApi } from '../app/api';
+
+import { API_CONFIG, buildApiUrl } from '../app/api';
+
+interface User {
+  phone: string;
+  accountType: 'Parent' | 'Student' | 'Admin';
+  active: boolean;
+  [key: string]: any;
+}
+
+interface AuthContextProps {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextProps>({
+  user: null,
+  isAuthenticated: false,
+  isLoading: true,
+  logout: async () => {},
+  refreshUser: async () => {},
+});
+
+export const useAuth = () => useContext(AuthContext);
+
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+
+  // Rafraîchir le user depuis l'API (endpoint /auth/me)
+  const refreshUser = async () => {
+    setIsLoading(true);
+    try {
+      const userObj = await fetchUserFromApi();
+      setUser(userObj);
+    } catch (e) {
+      setUser(null);
+      await clearAuthData();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshUser();
+  }, []);
+
+  const logout = async () => {
+    await clearAuthData();
+    setUser(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, logout, refreshUser }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};

@@ -1,0 +1,450 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import {
+  ArrowLeft,
+  Bell,
+  CheckCircle,
+  Circle,
+  Trash2,
+  MoreVertical,
+} from 'lucide-react-native';
+
+interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  time: string;
+  isRead: boolean;
+  type: 'info' | 'success' | 'warning' | 'error';
+  category: string;
+}
+
+const initialNotifications: Notification[] = [
+  {
+    id: '1',
+    title: 'Nouveau cours disponible',
+    message:
+      'Un nouveau cours de mathématiques "Les fractions" a été ajouté pour Emma. Commencez dès maintenant !',
+    time: 'Il y a 10 min',
+    isRead: false,
+    type: 'info',
+    category: 'Cours',
+  },
+  {
+    id: '2',
+    title: 'Progrès de votre enfant',
+    message:
+      'Lucas a terminé le chapitre 3 de français avec une note de 85%. Félicitations !',
+    time: 'Il y a 1h',
+    isRead: false,
+    type: 'success',
+    category: 'Progrès',
+  },
+  {
+    id: '3',
+    title: 'Rappel de paiement',
+    message:
+      'Votre abonnement expire dans 3 jours. Renouvelez maintenant pour éviter toute interruption.',
+    time: 'Il y a 2h',
+    isRead: true,
+    type: 'warning',
+    category: 'Facturation',
+  },
+  {
+    id: '4',
+    title: 'Nouveau message du forum',
+    message:
+      'Vous avez reçu une réponse à votre question sur les devoirs de mathématiques.',
+    time: 'Il y a 3h',
+    isRead: false,
+    type: 'info',
+    category: 'Forum',
+  },
+  {
+    id: '5',
+    title: 'Maintenance programmée',
+    message:
+      'La plateforme sera en maintenance le dimanche de 2h à 6h du matin. Planifiez en conséquence.',
+    time: 'Il y a 1 jour',
+    isRead: true,
+    type: 'warning',
+    category: 'Système',
+  },
+  {
+    id: '6',
+    title: 'Nouveau pack disponible',
+    message:
+      'Le pack "Anglais Avancé" est maintenant disponible pour les élèves de CM2.',
+    time: 'Il y a 2 jours',
+    isRead: true,
+    type: 'info',
+    category: 'Nouveautés',
+  },
+];
+
+export default function NotificationsScreen() {
+  const router = useRouter();
+  const [notifications, setNotifications] = useState(initialNotifications);
+  const [filter, setFilter] = useState<'all' | 'unread'>('all');
+
+  const filteredNotifications = notifications.filter(
+    (notification) =>
+      filter === 'all' || (filter === 'unread' && !notification.isRead),
+  );
+
+  const markAsRead = (id: string) => {
+    setNotifications((prev) =>
+      prev.map((notification) =>
+        notification.id === id
+          ? { ...notification, isRead: true }
+          : notification,
+      ),
+    );
+  };
+
+  const markAllAsRead = () => {
+    setNotifications((prev) =>
+      prev.map((notification) => ({ ...notification, isRead: true })),
+    );
+  };
+
+  const deleteNotification = (id: string) => {
+    Alert.alert(
+      'Supprimer la notification',
+      'Êtes-vous sûr de vouloir supprimer cette notification ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: () => {
+            setNotifications((prev) => prev.filter((n) => n.id !== id));
+          },
+        },
+      ],
+    );
+  };
+
+  const getTypeColor = (type: string) => {
+    const colors = {
+      info: '#3B82F6',
+      success: '#10B981',
+      warning: '#F59E0B',
+      error: '#EF4444',
+    };
+    return colors[type as keyof typeof colors] || '#6B7280';
+  };
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'success':
+        return <CheckCircle size={20} color="#10B981" />;
+      case 'warning':
+        return <Bell size={20} color="#F59E0B" />;
+      case 'error':
+        return <Bell size={20} color="#EF4444" />;
+      default:
+        return <Bell size={20} color="#3B82F6" />;
+    }
+  };
+
+  const renderNotification = (notification: Notification) => (
+    <TouchableOpacity
+      key={notification.id}
+      style={[
+        styles.notificationCard,
+        !notification.isRead && styles.unreadCard,
+      ]}
+      onPress={() => markAsRead(notification.id)}
+    >
+      <View style={styles.notificationIcon}>
+        {getTypeIcon(notification.type)}
+      </View>
+
+      <View style={styles.notificationContent}>
+        <View style={styles.notificationHeader}>
+          <Text
+            style={[
+              styles.notificationTitle,
+              !notification.isRead && styles.unreadTitle,
+            ]}
+          >
+            {notification.title}
+          </Text>
+          <View style={styles.notificationMeta}>
+            <Text style={styles.notificationCategory}>
+              {notification.category}
+            </Text>
+            <TouchableOpacity
+              style={styles.menuButton}
+              onPress={() => deleteNotification(notification.id)}
+            >
+              <Trash2 size={16} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <Text style={styles.notificationMessage} numberOfLines={3}>
+          {notification.message}
+        </Text>
+
+        <View style={styles.notificationFooter}>
+          <Text style={styles.notificationTime}>{notification.time}</Text>
+          {!notification.isRead && (
+            <View style={styles.unreadIndicator}>
+              <Circle size={12} color="#10B981" fill="#10B981" />
+            </View>
+          )}
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.push('/parent-dashboard/(tabs)')}
+        >
+          <ArrowLeft size={24} color="#6B7280" />
+        </TouchableOpacity>
+        <Text style={styles.title}>Notifications</Text>
+        <TouchableOpacity onPress={markAllAsRead}>
+          <Text style={styles.markAllButton}>Tout marquer lu</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.stats}>
+        <Text style={styles.statsText}>
+          {notifications.filter((n) => !n.isRead).length} non lues sur{' '}
+          {notifications.length}
+        </Text>
+      </View>
+
+      <View style={styles.filters}>
+        <TouchableOpacity
+          style={[styles.filterButton, filter === 'all' && styles.activeFilter]}
+          onPress={() => setFilter('all')}
+        >
+          <Text
+            style={[
+              styles.filterText,
+              filter === 'all' && styles.activeFilterText,
+            ]}
+          >
+            Toutes ({notifications.length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            filter === 'unread' && styles.activeFilter,
+          ]}
+          onPress={() => setFilter('unread')}
+        >
+          <Text
+            style={[
+              styles.filterText,
+              filter === 'unread' && styles.activeFilterText,
+            ]}
+          >
+            Non lues ({notifications.filter((n) => !n.isRead).length})
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {filteredNotifications.length > 0 ? (
+          filteredNotifications.map(renderNotification)
+        ) : (
+          <View style={styles.emptyState}>
+            <Bell size={64} color="#D1D5DB" />
+            <Text style={styles.emptyTitle}>
+              {filter === 'unread'
+                ? 'Aucune notification non lue'
+                : 'Aucune notification'}
+            </Text>
+            <Text style={styles.emptyMessage}>
+              {filter === 'unread'
+                ? 'Toutes vos notifications ont été lues !'
+                : 'Vous recevrez ici les mises à jour importantes.'}
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+  },
+  backButton: {
+    padding: 8,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    flex: 1,
+    textAlign: 'center',
+    marginHorizontal: 16,
+  },
+  markAllButton: {
+    fontSize: 14,
+    color: '#10B981',
+    fontWeight: '600',
+  },
+  stats: {
+    paddingHorizontal: 20,
+    paddingBottom: 15,
+  },
+  statsText: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  filters: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  filterButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  activeFilter: {
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
+  },
+  filterText: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  activeFilterText: {
+    color: '#FFFFFF',
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  notificationCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  unreadCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#10B981',
+    backgroundColor: '#F0FDF4',
+  },
+  notificationIcon: {
+    marginRight: 12,
+    marginTop: 2,
+  },
+  notificationContent: {
+    flex: 1,
+  },
+  notificationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  notificationTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    flex: 1,
+    marginRight: 8,
+  },
+  unreadTitle: {
+    color: '#10B981',
+  },
+  notificationMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  notificationCategory: {
+    fontSize: 12,
+    color: '#6B7280',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginRight: 8,
+  },
+  menuButton: {
+    padding: 4,
+  },
+  notificationMessage: {
+    fontSize: 14,
+    color: '#4B5563',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  notificationFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  notificationTime: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  unreadIndicator: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 80,
+    paddingBottom: 40,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#4B5563',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyMessage: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    paddingHorizontal: 40,
+    lineHeight: 20,
+  },
+});

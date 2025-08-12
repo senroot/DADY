@@ -1,0 +1,402 @@
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { Users, Plus, BookOpen, Settings, ChartBar as BarChart3, User, Package, MessageCircle } from 'lucide-react-native';
+import { useAuth } from '../../contexts/AuthContext';
+
+const packs = [
+  {
+    id: 'maternelle',
+    name: 'Pack Maternelle',
+    levels: ['Maternelle'],
+    price: '15€/mois',
+    color: '#10B981',
+  },
+  {
+    id: 'primaire',
+    name: 'Pack Primaire',
+    levels: ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2'],
+    price: '25€/mois',
+    color: '#3B82F6',
+  },
+  {
+    id: 'college',
+    name: 'Pack Collège',
+    levels: ['6ème', '5ème', '4ème', '3ème'],
+    price: '35€/mois',
+    color: '#8B5CF6',
+  },
+];
+
+  const router = useRouter();
+  const { user } = useAuth();
+
+  // Récupérer les enfants réels du parent connecté
+  const children = user?.children || [];
+
+  // Affichage d'un enfant réel (si infos disponibles)
+  const renderChild = (child: any) => (
+    <TouchableOpacity key={child._id || child.id} style={styles.studentCard}>
+      <View style={styles.studentHeader}>
+        <View style={styles.studentAvatar}>
+          <Text style={styles.studentAvatarText}>{child.firstName?.[0] || '?'}{child.lastName?.[0] || ''}</Text>
+        </View>
+        <View style={styles.studentInfo}>
+          <Text style={styles.studentName}>{child.firstName} {child.lastName}</Text>
+          <Text style={styles.studentLevel}>{child.level || ''} {child.pack || ''}</Text>
+        </View>
+        <TouchableOpacity style={styles.studentMenuButton}>
+          <Settings size={20} color="#6B7280" />
+        </TouchableOpacity>
+      </View>
+      <View style={styles.progressContainer}>
+        <Text style={styles.progressLabel}>Progression globale</Text>
+        <View style={styles.progressBar}>
+          <View style={[styles.progressFill, { width: `${child.progress || 0}%` }]} />
+        </View>
+        <Text style={styles.progressText}>{child.progress || 0}%</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const renderPack = (pack: any) => (
+    <TouchableOpacity key={pack.id} style={styles.packCard}>
+      <View style={[styles.packHeader, { backgroundColor: `${pack.color}15` }]}>
+        <Package size={24} color={pack.color} />
+        <Text style={[styles.packName, { color: pack.color }]}>{pack.name}</Text>
+      </View>
+      <Text style={styles.packLevels}>
+        Classes: {pack.levels.join(', ')}
+      </Text>
+      <Text style={styles.packPrice}>{pack.price}</Text>
+    </TouchableOpacity>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.title}>Tableau de Bord Parent</Text>
+          <Text style={styles.subtitle}>Gérez l'apprentissage de vos enfants</Text>
+        </View>
+        <TouchableOpacity style={styles.profileButton}>
+          <User size={24} color="#6B7280" />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Quick Stats */}
+        <View style={styles.statsContainer}>
+          <View style={styles.statCard}>
+            <Users size={24} color="#3B82F6" />
+            <Text style={styles.statNumber}>{children.length}</Text>
+            <Text style={styles.statLabel}>Enfants</Text>
+          </View>
+          
+          <View style={styles.statCard}>
+            <BookOpen size={24} color="#10B981" />
+            <Text style={styles.statNumber}>3</Text>
+            <Text style={styles.statLabel}>Matières</Text>
+          </View>
+          
+          <View style={styles.statCard}>
+            <BarChart3 size={24} color="#F59E0B" />
+            <Text style={styles.statNumber}>68%</Text>
+            <Text style={styles.statLabel}>Progression</Text>
+          </View>
+        </View>
+
+        {/* Students Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Mes Enfants</Text>
+            <TouchableOpacity 
+              style={styles.addButton}
+              onPress={() => router.push('/parent-dashboard/add-student')}
+            >
+              <Plus size={20} color="#3B82F6" />
+              <Text style={styles.addButtonText}>Ajouter</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {children.length === 0 ? (
+            <Text style={{ color: '#6B7280', textAlign: 'center', marginVertical: 20 }}>
+              Aucun enfant ajouté pour le moment.
+            </Text>
+          ) : (
+            children.map(renderChild)
+          )}
+        </View>
+
+        {/* Subscription Packs */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Packs d'Abonnement</Text>
+          <Text style={styles.sectionSubtitle}>
+            Choisissez le pack adapté au niveau de votre enfant
+          </Text>
+          
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.packsScroll}>
+            {packs.map(renderPack)}
+          </ScrollView>
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Actions Rapides</Text>
+          
+          <View style={styles.quickActions}>
+            <TouchableOpacity 
+              style={styles.quickAction}
+              onPress={() => router.push('/parent-dashboard/settings')}
+            >
+              <Settings size={24} color="#10B981" />
+              <Text style={styles.quickActionText}>Paramètres</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.quickAction}
+              onPress={() => router.push('/parent-dashboard/forum')}
+            >
+              <MessageCircle size={24} color="#8B5CF6" />
+              <Text style={styles.quickActionText}>Forum</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.quickAction}>
+              <BarChart3 size={24} color="#6B7280" />
+              <Text style={styles.quickActionText}>Rapports</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  profileButton: {
+    padding: 8,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 25,
+  },
+  statCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 15,
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  section: {
+    marginBottom: 30,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 15,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  addButtonText: {
+    color: '#3B82F6',
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  studentCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  studentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  studentAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#3B82F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 15,
+  },
+  studentAvatarText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  studentInfo: {
+    flex: 1,
+  },
+  studentName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  studentLevel: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  studentMenuButton: {
+    padding: 8,
+  },
+  progressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  progressLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginRight: 10,
+  },
+  progressBar: {
+    flex: 1,
+    height: 6,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 3,
+    marginRight: 10,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#10B981',
+    borderRadius: 3,
+  },
+  progressText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#10B981',
+    minWidth: 35,
+  },
+  packsScroll: {
+    marginBottom: 10,
+  },
+  packCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 15,
+    width: 200,
+    marginRight: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  packHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  packName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  packLevels: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 8,
+    lineHeight: 16,
+  },
+  packPrice: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  quickActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  quickAction: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  quickActionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+});
