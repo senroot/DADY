@@ -1,89 +1,44 @@
-import React, { useState, memo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
+  ScrollView,
   TouchableOpacity,
   TextInput,
-  ScrollView,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { MessageCircle } from 'lucide-react-native';
-import { Heart } from 'lucide-react-native';
-import { Reply } from 'lucide-react-native';
-import { Search } from 'lucide-react-native';
-import { CirclePlus as PlusCircle } from 'lucide-react-native';
-import { Users } from 'lucide-react-native';
+import {
+  MessageCircle,
+  Heart,
+  Reply,
+  Search,
+  CirclePlus as PlusCircle,
+  Users,
+} from 'lucide-react-native';
+import { useAuth } from '../../../contexts/AuthContext';
 
-interface ForumPost {
-  id: string;
+interface ForumThread {
+  _id: string;
   title: string;
-  content: string;
-  author: string;
-  authorType: 'parent' | 'admin';
-  timestamp: string;
-  likes: number;
-  replies: number;
-  isLiked: boolean;
+  description: string;
+  author: {
+    firstName: string;
+    lastName: string;
+    accountType: string;
+  };
   category: string;
+  createdAt: string;
+  lastActivity: string;
+  messagesCount: number;
+  participantsCount: number;
+  views: number;
+  isPinned: boolean;
 }
-
-const forumPosts: ForumPost[] = [
-  {
-    id: '1',
-    title: 'Comment motiver mon enfant à faire ses devoirs ?',
-    content:
-      'Bonjour, ma fille de 8 ans a du mal à se concentrer sur ses devoirs. Avez-vous des conseils pour la motiver ?',
-    author: 'Sophie_M',
-    authorType: 'parent',
-    timestamp: 'Il y a 2h',
-    likes: 15,
-    replies: 8,
-    isLiked: false,
-    category: 'Conseils',
-  },
-  {
-    id: '2',
-    title: "Temps d'écran recommandé pour les cours en ligne",
-    content:
-      "Quelle est la durée recommandée pour les sessions d'apprentissage en ligne pour un enfant de 10 ans ?",
-    author: 'Marc_L',
-    authorType: 'parent',
-    timestamp: 'Il y a 4h',
-    likes: 12,
-    replies: 6,
-    isLiked: true,
-    category: 'Santé',
-  },
-  {
-    id: '3',
-    title: 'Nouveaux cours de mathématiques disponibles',
-    content:
-      "Nous avons ajouté de nouveaux modules de mathématiques pour le niveau CM1 et CM2. N'hésitez pas à les découvrir !",
-    author: 'Équipe_EduPlatform',
-    authorType: 'admin',
-    timestamp: 'Il y a 1 jour',
-    likes: 25,
-    replies: 3,
-    isLiked: false,
-    category: 'Annonces',
-  },
-  {
-    id: '4',
-    title: "Partage d'expérience : progrès en anglais",
-    content:
-      "Mon fils a fait d'énormes progrès en anglais grâce à la plateforme. Je partage notre expérience...",
-    author: 'Julie_K',
-    authorType: 'parent',
-    timestamp: 'Il y a 2 jours',
-    likes: 18,
-    replies: 12,
-    isLiked: false,
-    category: 'Témoignages',
-  },
-];
 
 const categories = [
   'Tous',
@@ -96,14 +51,50 @@ const categories = [
 
 export default function ForumTabScreen() {
   const router = useRouter();
+  const { getForumThreads } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Tous');
-  const [posts, setPosts] = useState(forumPosts);
+  const [posts, setPosts] = useState<ForumThread[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const filteredPosts = posts.filter((post) => {
+  // Chargement des données forum
+  const loadForumThreads = async () => {
+    try {
+      setLoading(true);
+      const filters = selectedCategory !== 'Tous' ? { category: selectedCategory } : {};
+      const threads = await getForumThreads(filters);
+      
+      // S'assurer que threads est un array
+      const threadsArray = Array.isArray(threads) ? threads : [];
+      console.log('📋 Threads chargés:', threadsArray.length);
+      setPosts(threadsArray);
+    } catch (error) {
+      console.error('Erreur lors du chargement des threads:', error);
+      Alert.alert('Erreur', 'Impossible de charger les discussions');
+      setPosts([]); // Définir un array vide en cas d'erreur
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadForumThreads();
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
+    loadForumThreads();
+  }, [selectedCategory]);
+
+  // Protection supplémentaire - S'assurer que posts est un array
+  const postsArray = Array.isArray(posts) ? posts : [];
+  
+  const filteredPosts = postsArray.filter((post) => {
     const matchesSearch =
       post.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      post.content.toLowerCase().includes(searchQuery.toLowerCase());
+      post.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory =
       selectedCategory === 'Tous' || post.category === selectedCategory;
 
@@ -111,18 +102,8 @@ export default function ForumTabScreen() {
   });
 
   const handleLike = (postId: string) => {
-    setPosts(
-      posts.map((post) => {
-        if (post.id === postId) {
-          return {
-            ...post,
-            isLiked: !post.isLiked,
-            likes: post.isLiked ? post.likes - 1 : post.likes + 1,
-          };
-        }
-        return post;
-      }),
-    );
+    // TODO: Implémenter l'API like plus tard
+    console.log('Like post:', postId);
   };
 
   const getCategoryColor = (category: string) => {
@@ -136,17 +117,28 @@ export default function ForumTabScreen() {
     return colors[category] || '#10B981';
   };
 
-  // Interface pour les props du composant PostCard
-  interface PostCardProps {
-    post: ForumPost;
-    onLike: (postId: string) => void;
-    styles: any;
-    getCategoryColor: (category: string) => string;
-  }
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    const diffInDays = Math.floor(diffInHours / 24);
+    
+    if (diffInMinutes < 60) return `Il y a ${diffInMinutes}m`;
+    if (diffInHours < 24) return `Il y a ${diffInHours}h`;
+    if (diffInDays < 7) return `Il y a ${diffInDays}j`;
+    return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  };
 
-  // Composant mémoïsé pour l'affichage d'un post
-  const PostCard = memo(({ post, onLike, styles, getCategoryColor }: PostCardProps) => (
-    <TouchableOpacity key={post.id} style={styles.postCard}>
+  const renderPost = (post: ForumThread) => (
+    <TouchableOpacity 
+      key={post._id} 
+      style={styles.postCard}
+      onPress={() => router.push({
+        pathname: '/parent-dashboard/forum-discussion',
+        params: { threadId: post._id }
+      })}
+    >
       <View style={styles.postHeader}>
         <View
           style={[
@@ -163,12 +155,12 @@ export default function ForumTabScreen() {
             {post.category}
           </Text>
         </View>
-        <Text style={styles.timestamp}>{post.timestamp}</Text>
+        <Text style={styles.timestamp}>{formatDate(post.lastActivity)}</Text>
       </View>
 
       <Text style={styles.postTitle}>{post.title}</Text>
       <Text style={styles.postContent} numberOfLines={3}>
-        {post.content}
+        {post.description}
       </Text>
 
       <View style={styles.postFooter}>
@@ -178,49 +170,50 @@ export default function ForumTabScreen() {
               styles.authorBadge,
               {
                 backgroundColor:
-                  post.authorType === 'admin' ? '#FEF3C7' : '#EEF2FF',
+                  post.author.accountType === 'admin' ? '#FEF3C7' : '#EEF2FF',
               },
             ]}
           >
             <Users
               size={12}
-              color={post.authorType === 'admin' ? '#F59E0B' : '#3B82F6'}
+              color={post.author.accountType === 'admin' ? '#F59E0B' : '#3B82F6'}
             />
           </View>
-          <Text style={styles.authorName}>{post.author}</Text>
+          <Text style={styles.authorName}>
+            {post.author.firstName} {post.author.lastName}
+          </Text>
           <Text style={styles.authorType}>
-            • {post.authorType === 'admin' ? 'Équipe' : 'Parent'}
+            • {post.author.accountType === 'admin' ? 'Équipe' : 'Parent'}
           </Text>
         </View>
 
         <View style={styles.postActions}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => onLike(post.id)}
-          >
-            <Heart
-              size={18}
-              color={post.isLiked ? '#EF4444' : '#6B7280'}
-              fill={post.isLiked ? '#EF4444' : 'none'}
-            />
-            <Text
-              style={[
-                styles.actionText,
-                post.isLiked && styles.actionTextActive,
-              ]}
-            >
-              {post.likes}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.statsGroup}>
+            <View style={styles.statItem}>
+              <Heart size={16} color="#6B7280" fill="none" />
+              <Text style={styles.statText}>{post.views || 0}</Text>
+            </View>
+            
+            <View style={styles.statItem}>
+              <Users size={16} color="#6B7280" />
+              <Text style={styles.statText}>{post.participantsCount || 0}</Text>
+            </View>
+            
+            <View style={styles.statItem}>
+              <MessageCircle size={16} color="#6B7280" />
+              <Text style={styles.statText}>{post.messagesCount || 0}</Text>
+            </View>
+          </View>
 
-          <TouchableOpacity style={styles.actionButton}>
-            <Reply size={18} color="#6B7280" />
-            <Text style={styles.actionText}>{post.replies}</Text>
-          </TouchableOpacity>
+          {post.isPinned && (
+            <View style={styles.pinnedBadge}>
+              <Text style={styles.pinnedText}>📌 Épinglé</Text>
+            </View>
+          )}
         </View>
       </View>
     </TouchableOpacity>
-  ));
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -241,7 +234,10 @@ export default function ForumTabScreen() {
             onChangeText={setSearchQuery}
           />
         </View>
-        <TouchableOpacity style={styles.newPostButton}>
+        <TouchableOpacity 
+          style={styles.newPostButton}
+          onPress={() => router.push('/parent-dashboard/create-thread')}
+        >
           <PlusCircle size={24} color="#10B981" />
         </TouchableOpacity>
       </View>
@@ -275,19 +271,27 @@ export default function ForumTabScreen() {
         </ScrollView>
       </View>
 
-      {/* FlatList principal pour les posts - prend tout l'espace restant */}
-      <FlatList
-        data={filteredPosts}
-        renderItem={({ item }) => (
-          <PostCard 
-            post={item} 
-            onLike={handleLike} 
-            styles={styles} 
-            getCategoryColor={getCategoryColor}
+      {/* ScrollView principal pour les posts - prend tout l'espace restant */}
+      <ScrollView
+        style={styles.postsContainer}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#10B981']}
+            tintColor="#10B981"
           />
-        )}
-        keyExtractor={item => item.id}
-        ListEmptyComponent={
+        }
+      >
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#10B981" />
+            <Text style={styles.loadingText}>Chargement des discussions...</Text>
+          </View>
+        ) : filteredPosts.length > 0 ? (
+          filteredPosts.map(renderPost)
+        ) : (
           <View style={styles.emptyState}>
             <MessageCircle size={48} color="#D1D5DB" />
             <Text style={styles.emptyStateTitle}>
@@ -297,10 +301,8 @@ export default function ForumTabScreen() {
               Essayez de modifier vos filtres ou créez une nouvelle discussion
             </Text>
           </View>
-        }
-        showsVerticalScrollIndicator={false}
-        style={styles.postsContainer}
-      />
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -507,5 +509,42 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 40,
     lineHeight: 20,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 60,
+    paddingBottom: 60,
+    minHeight: 300,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#6B7280',
+    marginTop: 15,
+  },
+  statsGroup: {
+    flexDirection: 'row',
+    gap: 15,
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  statText: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  pinnedBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  pinnedText: {
+    fontSize: 10,
+    color: '#F59E0B',
+    fontWeight: '600',
   },
 });

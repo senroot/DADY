@@ -36,6 +36,28 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   isAwaitingSecretCode: boolean;
+  // ✅ NOUVEAU : Cache global des enfants
+  cachedChildren: any[];
+  setCachedChildren: (children: any[]) => void;
+  // ✅ NOUVEAU : Cache global des détails utilisateur complets
+  cachedUserDetails: any | null;
+  setCachedUserDetails: (userDetails: any) => void;
+  // ✅ NOUVEAU : Fonction pour charger les détails utilisateur avec cache
+  loadUserDetailsWithCache: () => Promise<any>;
+  // ✅ NOUVEAU : Cache global des notifications
+  cachedNotifications: any[];
+  setCachedNotifications: (notifications: any[]) => void;
+  unreadNotificationsCount: number;
+  setUnreadNotificationsCount: (count: number) => void;
+  // ✅ NOUVEAU : Fonction pour charger les notifications avec cache
+  loadNotificationsWithCache: () => Promise<any[]>;
+  // ✅ NOUVEAU : Fonctions du forum
+  getForumThreads: (filters?: any) => Promise<any>;
+  createForumThread: (threadData: any) => Promise<any>;
+  checkCanCreateThread: () => Promise<{ canCreate: boolean; message?: string }>;
+  getForumThread: (threadId: string) => Promise<any>;
+  postForumMessage: (threadId: string, messageData: any) => Promise<any>;
+  toggleMessageLike: (messageId: string) => Promise<any>;
   login: (
     phone: string,
     password: string,
@@ -84,6 +106,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isAwaitingSecretCode, setIsAwaitingSecretCode] = useState(false);
   const [isRefreshingUser, setIsRefreshingUser] = useState(false);
+  // ✅ NOUVEAU : Cache global des enfants
+  const [cachedChildren, setCachedChildren] = useState<any[]>([]);
+  // ✅ NOUVEAU : Cache global des détails utilisateur complets
+  const [cachedUserDetails, setCachedUserDetails] = useState<any | null>(null);
+  // ✅ NOUVEAU : Cache global des notifications
+  const [cachedNotifications, setCachedNotifications] = useState<any[]>([]);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
 
   console.log('📊 AuthProvider: État actuel:', {
     hasUser: !!user,
@@ -596,6 +625,196 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  // ==================== FONCTIONS FORUM ====================
+
+  const getForumThreads = async (filters = {}) => {
+    try {
+      if (!token) {
+        throw new Error('Aucune session active');
+      }
+
+      const queryParams = new URLSearchParams();
+      Object.keys(filters).forEach(key => {
+        if (filters[key] && filters[key] !== 'Tous' && filters[key] !== 'all') {
+          queryParams.append(key, filters[key]);
+        }
+      });
+
+      const url = queryParams.toString() 
+        ? buildApiUrl(`/forum/threads?${queryParams.toString()}`)
+        : buildApiUrl('/forum/threads');
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await handleApiResponse(response);
+      if (!data) return;
+
+      if (!data.success) {
+        throw new Error(data.message || 'Erreur lors de la récupération des discussions');
+      }
+
+      // S'assurer que nous retournons toujours un array
+      // L'API retourne data.threads selon la structure du controller Forum
+      const threads = data.data?.threads || data.threads || [];
+      console.log('📋 Threads reçus from API:', threads.length);
+      return Array.isArray(threads) ? threads : [];
+    } catch (error) {
+      console.error('❌ Erreur lors de la récupération des discussions:', error);
+      throw error;
+    }
+  };
+
+  const createForumThread = async (threadData) => {
+    try {
+      if (!token) {
+        throw new Error('Aucune session active');
+      }
+
+      console.log('🚀 createForumThread - Données à envoyer:', threadData);
+      const jsonBody = JSON.stringify(threadData);
+      console.log('📦 createForumThread - JSON stringifié:', jsonBody);
+      console.log('🔍 createForumThread - Longueur JSON:', jsonBody.length);
+
+      const response = await fetch(buildApiUrl('/forum/threads'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: jsonBody,
+      });
+
+      console.log('📡 createForumThread - Réponse status:', response.status);
+      const data = await handleApiResponse(response);
+      if (!data) return;
+
+      if (!data.success) {
+        throw new Error(data.message || 'Erreur lors de la création de la discussion');
+      }
+
+      return data.data;
+    } catch (error) {
+      console.error('❌ Erreur lors de la création de la discussion:', error);
+      throw error;
+    }
+  };
+
+  const checkCanCreateThread = async () => {
+    try {
+      if (!token || !user) {
+        return { canCreate: false, message: 'Aucune session active' };
+      }
+
+      // Seuls les parents ont une limite
+      if (user.accountType !== 'Parent') {
+        return { canCreate: true };
+      }
+
+      const response = await fetch(buildApiUrl('/forum/threads/check-limit'), {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await handleApiResponse(response);
+      if (!data) return { canCreate: false, message: 'Erreur de connexion' };
+
+      return data.data || { canCreate: false, message: 'Erreur inconnue' };
+    } catch (error) {
+      console.error('❌ Erreur lors de la vérification:', error);
+      return { canCreate: false, message: 'Erreur de connexion' };
+    }
+  };
+
+  const getForumThread = async (threadId) => {
+    try {
+      if (!token) {
+        throw new Error('Aucune session active');
+      }
+
+      const response = await fetch(buildApiUrl(`/forum/threads/${threadId}`), {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await handleApiResponse(response);
+      if (!data) return;
+
+      if (!data.success) {
+        throw new Error(data.message || 'Erreur lors de la récupération de la discussion');
+      }
+
+      return data.data;
+    } catch (error) {
+      console.error('❌ Erreur lors de la récupération de la discussion:', error);
+      throw error;
+    }
+  };
+
+  const postForumMessage = async (threadId, messageData) => {
+    try {
+      if (!token) {
+        throw new Error('Aucune session active');
+      }
+
+      const response = await fetch(buildApiUrl(`/forum/threads/${threadId}/messages`), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(messageData),
+      });
+
+      const data = await handleApiResponse(response);
+      if (!data) return;
+
+      if (!data.success) {
+        throw new Error(data.message || 'Erreur lors de la création du message');
+      }
+
+      return data.data;
+    } catch (error) {
+      console.error('❌ Erreur lors de la création du message:', error);
+      throw error;
+    }
+  };
+
+  const toggleMessageLike = async (messageId) => {
+    try {
+      if (!token) {
+        throw new Error('Aucune session active');
+      }
+
+      const response = await fetch(buildApiUrl(`/forum/messages/${messageId}/like`), {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await handleApiResponse(response);
+      if (!data) return;
+
+      if (!data.success) {
+        throw new Error(data.message || 'Erreur lors du like/unlike');
+      }
+
+      return data.data;
+    } catch (error) {
+      console.error('❌ Erreur lors du like/unlike:', error);
+      throw error;
+    }
+  };
+
   const signup = async (userData: SignupData) => {
     try {
       setIsLoading(true);
@@ -635,9 +854,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const logout = async () => {
     try {
-      console.log('🚪 Déconnexion en cours...');
+      console.log('🚪 AuthContext: Déconnexion en cours...');
       setIsLoading(true);
 
+      // 1. Supprimer toutes les données stockées
+      console.log('🧹 AuthContext: Suppression des données AsyncStorage...');
       await AsyncStorage.multiRemove([
         'token',
         'user',
@@ -645,15 +866,129 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         'tempPhone',
       ]);
 
-      updateUser(null);
-      updateToken(null);
+      // 2. Réinitialiser les états IMMÉDIATEMENT
+      console.log('🔄 AuthContext: Réinitialisation des états...');
+      setUser(null);
+      setToken(null);
       setIsAwaitingSecretCode(false);
+      
+      // 3. Vider les caches lors de la déconnexion
+      console.log('🗑️ AuthContext: Vidage des caches...');
+      setCachedChildren([]);
+      setCachedUserDetails(null);
+      setCachedNotifications([]);
+      setUnreadNotificationsCount(0);
 
-      console.log('✅ Déconnexion réussie');
+      console.log('✅ AuthContext: Déconnexion réussie - toutes les données effacées');
     } catch (error) {
-      console.error('❌ Erreur lors de la déconnexion:', error);
+      console.error('❌ AuthContext: Erreur lors de la déconnexion:', error);
+      throw error; // Propager l'erreur pour que le composant puisse la gérer
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // ✅ NOUVELLE FONCTION : Chargement optimisé des détails utilisateur avec cache
+  const loadUserDetailsWithCache = async (): Promise<any> => {
+    try {
+      console.log('🚀 AuthContext: Chargement optimisé des détails utilisateur...');
+      
+      // 1. Vérifier d'abord le cache
+      if (cachedUserDetails && cachedUserDetails.firstName && cachedUserDetails.email) {
+        console.log('✅ AuthContext: Détails utilisateur trouvés dans le cache - retour immédiat');
+        return cachedUserDetails;
+      }
+      
+      // 2. Si pas de cache, faire l'appel API
+      if (!token) {
+        console.log('⚠️ AuthContext: Pas de token disponible pour charger les détails');
+        return null;
+      }
+      
+      console.log('🔄 AuthContext: Chargement des détails depuis l\'API...');
+      
+      const response = await fetchWithRetry(
+        buildApiUrl('/profile/getUserDetails'),
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success && data.data) {
+        console.log('✅ AuthContext: Détails utilisateur récupérés et mis en cache');
+        setCachedUserDetails(data.data);
+        return data.data;
+      } else {
+        console.error('❌ AuthContext: Réponse API invalide pour getUserDetails');
+        return null;
+      }
+      
+    } catch (error: any) {
+      console.error('❌ AuthContext: Erreur lors du chargement des détails:', error);
+      return null;
+    }
+  };
+
+  // ✅ NOUVELLE FONCTION : Chargement des notifications avec cache
+  const loadNotificationsWithCache = async (): Promise<any[]> => {
+    try {
+      console.log('🔔 AuthContext: Chargement des notifications...');
+      
+      if (!token) {
+        console.log('⚠️ AuthContext: Pas de token pour charger les notifications');
+        return [];
+      }
+      
+      // Charger toutes les notifications
+      const response = await fetchWithRetry(
+        buildApiUrl('/notification'),
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success && data.data) {
+        // Structure de réponse : { notifications: [], unreadCount: 0, pagination: {...} }
+        const notifications = data.data.notifications || [];
+        const unreadCount = data.data.unreadCount || 0;
+        
+        console.log('✅ AuthContext: Notifications récupérées:', notifications.length, 'dont', unreadCount, 'non-lues');
+        
+        // Mettre en cache les notifications
+        setCachedNotifications(notifications);
+        
+        // Mettre à jour le compteur de non-lues
+        setUnreadNotificationsCount(unreadCount);
+        
+        return notifications;
+      } else {
+        console.log('⚠️ AuthContext: Réponse API notifications invalide');
+        return [];
+      }
+      
+    } catch (error: any) {
+      console.error('❌ AuthContext: Erreur chargement notifications:', error);
+      return [];
     }
   };
 
@@ -712,6 +1047,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     user,
     token,
     isLoading,
+    cachedChildren,
+    setCachedChildren,
+    // ✅ NOUVEAU : Cache des détails utilisateur
+    cachedUserDetails,
+    setCachedUserDetails,
+    loadUserDetailsWithCache,
+    // ✅ NOUVEAU : Cache des notifications
+    cachedNotifications,
+    setCachedNotifications,
+    unreadNotificationsCount,
+    setUnreadNotificationsCount,
+    loadNotificationsWithCache,
+    // ✅ NOUVEAU : Fonctions du forum
+    getForumThreads,
+    createForumThread,
+    checkCanCreateThread,
+    getForumThread,
+    postForumMessage,
+    toggleMessageLike,
     login,
     verifySecretCode,
     signup,

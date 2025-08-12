@@ -45,14 +45,72 @@ const mockChildren = [
 
 export default function ChildrenScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, cachedChildren, setCachedChildren } = useAuth();
   const [children, setChildren] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
 
   useEffect(() => {
-    fetchChildren();
+    // ✅ NOUVEAU : Utiliser d'abord le cache, puis rafraîchir en arrière-plan
+    loadChildrenWithCache();
   }, []);
+
+  const loadChildrenWithCache = async () => {
+    console.log('🔄 Chargement des enfants avec cache...');
+    
+    // 1. Vérifier le cache d'abord
+    if (cachedChildren && cachedChildren.length > 0) {
+      console.log('✅ Enfants trouvés dans le cache:', cachedChildren.length);
+      setChildren(cachedChildren);
+      setLoading(false);
+      setIsOfflineMode(false);
+      
+      // 2. Rafraîchir en arrière-plan (optionnel)
+      console.log('🔄 Rafraîchissement en arrière-plan...');
+      setTimeout(() => {
+        refreshChildrenFromServer();
+      }, 500); // Petit délai pour que l'interface se charge d'abord
+    } else {
+      // 3. Pas de cache, charger depuis le serveur
+      console.log('⚠️ Pas de cache, chargement depuis le serveur...');
+      await fetchChildren();
+    }
+  };
+
+  const refreshChildrenFromServer = async () => {
+    try {
+      console.log('🌐 Rafraîchissement des enfants depuis le serveur...');
+      const token = await getAuthToken();
+      
+      if (!token) {
+        console.log('⚠️ Pas de token, skip du rafraîchissement');
+        return;
+      }
+
+      const res = await fetch(buildApiUrl('/parent/children'), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          const serverChildren = data.data || [];
+          console.log('✅ Enfants rafraîchis depuis le serveur:', serverChildren.length);
+          
+          // Mettre à jour le cache et l'état local
+          setCachedChildren(serverChildren);
+          setChildren(serverChildren);
+        }
+      }
+    } catch (error) {
+      console.log('⚠️ Erreur lors du rafraîchissement en arrière-plan:', error);
+      // Ne pas afficher d'erreur car on a déjà les données du cache
+    }
+  };
 
   const fetchChildren = async () => {
     try {

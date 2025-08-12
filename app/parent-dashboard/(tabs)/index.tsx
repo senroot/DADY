@@ -26,7 +26,7 @@ import { getAuthToken } from '../../../utils/authUtils';
 
 function ParentDashboardScreen() {
   const router = useRouter();
-  const { user, token, isLoading: isAuthLoading, refreshUser, forceReloadAuth } = useAuth();
+  const { user, token, isLoading: isAuthLoading, refreshUser, forceReloadAuth, cachedChildren, setCachedChildren, setCachedUserDetails, cachedNotifications, unreadNotificationsCount, loadNotificationsWithCache } = useAuth();
   
   // Log initial pour débogage
   console.log('🏁 ParentDashboardScreen render - isAuthLoading:', isAuthLoading, 'token:', !!token, 'user:', !!user, 'userType:', user?.accountType);
@@ -108,29 +108,16 @@ function ParentDashboardScreen() {
     totalCourses: 0
   });
 
-  const [notifications] = useState([
-    {
-      id: '1',
-      title: 'Nouveau cours disponible',
-      message: 'Un nouveau cours de mathématiques a été ajouté pour Emma',
-      time: 'Il y a 10 min',
-      isRead: false,
-    },
-    {
-      id: '2',
-      title: 'Progrès de votre enfant',
-      message: 'Lucas a terminé le chapitre 3 de français',
-      time: 'Il y a 1h',
-      isRead: false,
-    },
-    {
-      id: '3',
-      title: 'Rappel de paiement',
-      message: 'Votre abonnement expire dans 3 jours',
-      time: 'Il y a 2h',
-      isRead: true,
-    },
-  ]);
+  // ✅ SUPPRIMÉ : notifications statiques - on utilise maintenant cachedNotifications du contexte
+  // const [notifications] = useState([...]);
+
+  // Charger les notifications au montage
+  useEffect(() => {
+    if (token && user) {
+      console.log('🔔 Dashboard: Chargement initial des notifications...');
+      loadNotificationsWithCache();
+    }
+  }, [token, user]);
 
   // Charger les packs seulement au montage du composant
   useEffect(() => {
@@ -224,7 +211,9 @@ function ParentDashboardScreen() {
         const userData = await userResponse.json();
         if (userData.success) {
           setUserDetails(userData.data);
-          console.log('✅ Détails utilisateur chargés:', userData.data?.firstName || 'N/A');
+          // ✅ NOUVEAU : Mettre en cache les détails utilisateur pour éviter les appels répétés
+          setCachedUserDetails(userData.data);
+          console.log('✅ Détails utilisateur chargés et mis en cache:', userData.data?.firstName || 'N/A');
         }
       }
     } catch (error: any) {
@@ -269,18 +258,16 @@ function ParentDashboardScreen() {
 
   // Fonction pour charger les matières disponibles depuis le backend
   const loadAvailableSubjects = useCallback(async () => {
-    if (!token) return;
-
     try {
       console.log('📚 Chargement des matières disponibles...');
       
       const response = await fetchWithRetry(
-        buildApiUrl('/course/getAllCategories'), // ou /course/subjects selon votre API
+        buildApiUrl('/course/showAllCategories'), // ✅ Corrigé pour correspondre au backend
         {
           method: 'GET',
           headers: {
-            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
+            // ✅ Pas de token nécessaire selon le backend
           },
         },
       );
@@ -319,14 +306,24 @@ function ParentDashboardScreen() {
         totalSubjects: defaultSubjects.length
       }));
     }
-  }, [token]);
+  }, []); // ✅ Pas de dépendance token car plus nécessaire
 
   // Fonction pour charger la progression réelle des enfants (inspirée de l'ancien projet)
   const loadChildrenProgress = useCallback(async () => {
-    if (!token || user?.accountType !== 'Parent' || students.length === 0) return;
+    if (!token || user?.accountType !== 'Parent' || students.length === 0) {
+      console.log('⚠️ loadChildrenProgress: Conditions non remplies', {
+        hasToken: !!token,
+        accountType: user?.accountType,
+        studentsLength: students.length
+      });
+      return;
+    }
     
     try {
-      console.log('👨‍👩‍👧‍👦 Chargement de la progression des enfants...');
+      console.log('👨‍👩‍👧‍👦 Chargement de la progression des enfants...', {
+        studentsCount: students.length,
+        studentIds: students.map(s => s._id)
+      });
       
       const progressPromises = students.map(async (student) => {
         try {
@@ -347,9 +344,25 @@ function ParentDashboardScreen() {
 
           const data = await response.json();
           if (data.success) {
+            const progressData = data.data;
+            
+            // ✅ NOUVEAU : Calculer le pourcentage correctement
+            const progressPercentage = progressData.totalLessons > 0 
+              ? Math.round((progressData.completedLessons / progressData.totalLessons) * 100)
+              : 0;
+            
+            console.log(`📊 Progression ${student.firstName}:`, {
+              completedLessons: progressData.completedLessons,
+              totalLessons: progressData.totalLessons,
+              progressPercentage: progressPercentage
+            });
+            
             return {
               studentId: student._id,
-              progress: data.data
+              progress: {
+                ...progressData,
+                progressPercentage // Ajouter le pourcentage calculé
+              }
             };
           }
           return {
@@ -358,7 +371,8 @@ function ParentDashboardScreen() {
               totalPoints: 0,
               completedLessons: 0,
               totalLessons: 0,
-              averageProgress: 0
+              averageProgress: 0,
+              progressPercentage: 0 // ✅ Ajouter le pourcentage par défaut
             }
           };
         } catch (error) {
@@ -369,7 +383,8 @@ function ParentDashboardScreen() {
               totalPoints: 0,
               completedLessons: 0,
               totalLessons: 0,
-              averageProgress: 0
+              averageProgress: 0,
+              progressPercentage: 0 // ✅ Ajouter le pourcentage par défaut
             }
           };
         }
@@ -386,15 +401,16 @@ function ParentDashboardScreen() {
       progressResults.forEach(result => {
         progressMap[result.studentId] = result.progress;
         totalCourses += result.progress.totalLessons || 0;
-        if (result.progress.averageProgress > 0) {
-          totalProgressPoints += result.progress.averageProgress;
+        // ✅ NOUVEAU : Utiliser progressPercentage au lieu de averageProgress
+        if (result.progress.progressPercentage > 0) {
+          totalProgressPoints += result.progress.progressPercentage;
           validProgressCount++;
         }
       });
       
       setChildrenProgress(progressMap);
       
-      // Mettre à jour les statistiques globales
+      // ✅ NOUVEAU : Utiliser le pourcentage calculé pour les statistiques globales
       const averageProgress = validProgressCount > 0 ? Math.round(totalProgressPoints / validProgressCount) : 0;
       setGlobalStats(prev => ({
         ...prev,
@@ -517,8 +533,11 @@ function ParentDashboardScreen() {
       }
 
       if (data.success) {
-        setStudents(data.data || []);
-        console.log('✅ Enfants chargés:', data.data?.length || 0);
+        const childrenData = data.data || [];
+        setStudents(childrenData);
+        // ✅ NOUVEAU : Mettre à jour le cache global des enfants
+        setCachedChildren(childrenData);
+        console.log('✅ Enfants chargés et mis en cache:', childrenData.length);
       } else {
         console.error('❌ Erreur chargement enfants:', data.message);
         Alert.alert(
@@ -547,10 +566,10 @@ function ParentDashboardScreen() {
 
   // Charger les matières disponibles au montage
   useEffect(() => {
-    if (user?.accountType === 'Parent' && token) {
+    if (user?.accountType === 'Parent') { // ✅ Plus besoin de token
       loadAvailableSubjects();
     }
-  }, [user?.accountType, token, loadAvailableSubjects]);
+  }, [user?.accountType, loadAvailableSubjects]); // ✅ Supprimé token des dépendances
 
   // Charger la progression des enfants quand la liste des étudiants change
   useEffect(() => {
@@ -558,6 +577,15 @@ function ParentDashboardScreen() {
       loadChildrenProgress();
     }
   }, [students, loadChildrenProgress, user?.accountType]);
+
+  // ✅ NOUVEAU : Gérer l'état de chargement global
+  useEffect(() => {
+    // isLoading devient false quand les principales données sont chargées
+    if (!isAuthLoading && !isLoadingStudents && !isLoadingPacks && students.length > 0) {
+      console.log('✅ Toutes les données principales sont chargées, isLoading = false');
+      setIsLoading(false);
+    }
+  }, [isAuthLoading, isLoadingStudents, isLoadingPacks, students.length]);
 
   // Recharger les données quand l'écran devient actif (seulement si nécessaire)
   useFocusEffect(
@@ -653,12 +681,12 @@ function ParentDashboardScreen() {
         <View style={styles.progressBar}>
           <View
             style={[styles.progressFill, { 
-              width: `${childrenProgress[child._id]?.averageProgress || 0}%` 
+              width: `${childrenProgress[child._id]?.progressPercentage || 0}%` // ✅ Utiliser progressPercentage
             }]}
           />
         </View>
         <Text style={styles.progressText}>
-          {childrenProgress[child._id]?.averageProgress || 0}%
+          {childrenProgress[child._id]?.progressPercentage || 0}% {/* ✅ Utiliser progressPercentage */}
         </Text>
       </View>
       <View style={styles.studentStats}>
@@ -719,10 +747,10 @@ function ParentDashboardScreen() {
           onPress={() => setShowNotifications(!showNotifications)}
         >
           <Bell size={24} color="#6B7280" />
-          {notifications.filter((n) => !n.isRead).length > 0 && (
+          {unreadNotificationsCount > 0 && (
             <View style={styles.notificationBadge}>
               <Text style={styles.notificationBadgeText}>
-                {notifications.filter((n) => !n.isRead).length}
+                {unreadNotificationsCount}
               </Text>
             </View>
           )}
@@ -741,7 +769,7 @@ function ParentDashboardScreen() {
             </TouchableOpacity>
           </View>
 
-          {notifications.slice(0, 3).map((notification) => (
+          {cachedNotifications.slice(0, 3).map((notification) => (
             <TouchableOpacity
               key={notification.id}
               style={styles.notificationItem}
@@ -764,7 +792,7 @@ function ParentDashboardScreen() {
             </TouchableOpacity>
           ))}
 
-          {notifications.length === 0 && (
+          {cachedNotifications.length === 0 && (
             <View style={styles.emptyNotifications}>
               <Bell size={32} color="#D1D5DB" />
               <Text style={styles.emptyNotificationsText}>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import {
   Trash2,
   MoreVertical,
 } from 'lucide-react-native';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface Notification {
   id: string;
@@ -28,73 +29,37 @@ interface Notification {
   category: string;
 }
 
-const initialNotifications: Notification[] = [
-  {
-    id: '1',
-    title: 'Nouveau cours disponible',
-    message:
-      'Un nouveau cours de mathématiques "Les fractions" a été ajouté pour Emma. Commencez dès maintenant !',
-    time: 'Il y a 10 min',
-    isRead: false,
-    type: 'info',
-    category: 'Cours',
-  },
-  {
-    id: '2',
-    title: 'Progrès de votre enfant',
-    message:
-      'Lucas a terminé le chapitre 3 de français avec une note de 85%. Félicitations !',
-    time: 'Il y a 1h',
-    isRead: false,
-    type: 'success',
-    category: 'Progrès',
-  },
-  {
-    id: '3',
-    title: 'Rappel de paiement',
-    message:
-      'Votre abonnement expire dans 3 jours. Renouvelez maintenant pour éviter toute interruption.',
-    time: 'Il y a 2h',
-    isRead: true,
-    type: 'warning',
-    category: 'Facturation',
-  },
-  {
-    id: '4',
-    title: 'Nouveau message du forum',
-    message:
-      'Vous avez reçu une réponse à votre question sur les devoirs de mathématiques.',
-    time: 'Il y a 3h',
-    isRead: false,
-    type: 'info',
-    category: 'Forum',
-  },
-  {
-    id: '5',
-    title: 'Maintenance programmée',
-    message:
-      'La plateforme sera en maintenance le dimanche de 2h à 6h du matin. Planifiez en conséquence.',
-    time: 'Il y a 1 jour',
-    isRead: true,
-    type: 'warning',
-    category: 'Système',
-  },
-  {
-    id: '6',
-    title: 'Nouveau pack disponible',
-    message:
-      'Le pack "Anglais Avancé" est maintenant disponible pour les élèves de CM2.',
-    time: 'Il y a 2 jours',
-    isRead: true,
-    type: 'info',
-    category: 'Nouveautés',
-  },
-];
+// ✅ SUPPRIMÉ : notifications statiques - maintenant on utilise les vraies données de l'API
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const [notifications, setNotifications] = useState(initialNotifications);
+  const { cachedNotifications, loadNotificationsWithCache, unreadNotificationsCount } = useAuth();
+  
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+
+  // Charger les notifications au montage du composant
+  useEffect(() => {
+    const loadNotifications = async () => {
+      console.log('🔔 NotificationsScreen: Chargement des notifications...');
+      const freshNotifications = await loadNotificationsWithCache();
+      
+      // Convertir les données API au format attendu par le composant
+      const formattedNotifications: Notification[] = freshNotifications.map((notif: any) => ({
+        id: notif._id || notif.id,
+        title: notif.title || notif.subject || 'Notification',
+        message: notif.message || notif.content || '',
+        time: notif.createdAt ? new Date(notif.createdAt).toLocaleString('fr-FR') : 'Récemment',
+        isRead: notif.isRead || false,
+        type: notif.type || 'info',
+        category: notif.category || 'Général',
+      }));
+      
+      setNotifications(formattedNotifications);
+    };
+
+    loadNotifications();
+  }, []);
 
   const filteredNotifications = notifications.filter(
     (notification) =>

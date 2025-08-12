@@ -10,12 +10,26 @@ export default function WelcomeScreen() {
   const router = useRouter();
   const { isAuthenticated, isLoading, user } = useAuth();
 
-  if (isLoading) return null;
+  console.log('🏠 WelcomeScreen render:', {
+    isLoading,
+    isAuthenticated,
+    userType: user?.accountType,
+    hasUser: !!user
+  });
+
+  if (isLoading) {
+    console.log('⏳ WelcomeScreen: AuthContext en cours de chargement...');
+    return null;
+  }
+  
   if (isAuthenticated && user) {
+    console.log('🔄 WelcomeScreen: Utilisateur authentifié, redirection...', user.accountType);
     if (user.accountType === 'Parent') return <Redirect href="/parent-dashboard" />;
-    if (user.accountType === 'Student') return <Redirect href="/" />;
+    if (user.accountType === 'Student') return <Redirect href="/auth/student" />; // Route temporaire
     if (user.accountType === 'Admin') return <Redirect href="/auth/admin" />;
   }
+
+  console.log('✅ WelcomeScreen: Affichage de l\'écran de bienvenue');
 
   const userTypes = [
     {

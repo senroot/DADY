@@ -34,7 +34,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { user, logout, refreshUser } = useAuth();
+  const { user, logout, refreshUser, loadUserDetailsWithCache } = useAuth();
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -48,8 +48,9 @@ export default function SettingsScreen() {
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [gender, setGender] = useState('');
 
+  // Optimisation : Charger les données avec cache-first strategy
   useEffect(() => {
-    fetchProfileDetails();
+    loadUserDataWithCache();
   }, []);
 
   // Recharger les données quand l'utilisateur change dans le contexte
@@ -58,15 +59,106 @@ export default function SettingsScreen() {
       console.log('👤 Mise à jour des données depuis le contexte utilisateur...');
       setFirstName(user.firstName || '');
       setLastName(user.lastName || '');
+      setPhone(user.phone || '');
       setEmail(user.email || '');
       setProfileImage(user.image || null);
     }
   }, [user]);
 
+  // Fonction optimisée pour charger les données utilisateur
+  const loadUserDataWithCache = async () => {
+    try {
+      console.log('🚀 Settings: Chargement optimisé du profil utilisateur...');
+      
+      // 1. Vérifier d'abord les données du contexte de base
+      if (user && user.firstName && user.email) {
+        console.log('✅ Settings: Données utilisateur de base trouvées dans le contexte - chargement instantané');
+        setFirstName(user.firstName || '');
+        setLastName(user.lastName || '');
+        setPhone(user.phone || '');
+        setEmail(user.email || '');
+        setProfileImage(user.image || null);
+        setLoadingProfile(false);
+      }
+      
+      // 2. Utiliser la fonction optimisée du contexte pour les détails complets
+      console.log('🔄 Settings: Chargement des détails complets via AuthContext...');
+      const fullUserDetails = await loadUserDetailsWithCache();
+      
+      if (fullUserDetails) {
+        console.log('✅ Settings: Détails complets récupérés depuis le cache global');
+        
+        // Mettre à jour toutes les informations de base
+        setFirstName(fullUserDetails.firstName || '');
+        setLastName(fullUserDetails.lastName || '');
+        setPhone(fullUserDetails.phone || '');
+        setEmail(fullUserDetails.email || '');
+        setProfileImage(fullUserDetails.image || null);
+        
+        // Mettre à jour les détails additionnels si disponibles
+        const profile = fullUserDetails.additionalDetails;
+        if (profile) {
+          setDateOfBirth(profile.dateOfBirth || '');
+          setGender(profile.gender || '');
+          if (profile.contactNumber) {
+            setPhone(profile.contactNumber);
+          }
+        }
+        
+        console.log('✅ Settings: Interface mise à jour avec les données complètes');
+      } else {
+        console.log('⚠️ Settings: Aucuns détails récupérés - utilisation des données de base seulement');
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Settings: Erreur lors du chargement optimisé:', error);
+      // En cas d'erreur, garder les données de base du contexte user si disponibles
+    } finally {
+      setLoadingProfile(false);
+    }
+  };
+
+  // Fonction pour récupérer les détails additionnels en arrière-plan
+  const fetchProfileDetailsInBackground = async () => {
+    try {
+      console.log('🔍 Récupération des détails additionnels en arrière-plan...');
+      
+      const token = await getAuthToken();
+      const res = await fetch(buildApiUrl('/profile/getUserDetails'), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok && data.success && data.data) {
+        const userData = data.data;
+        console.log('✅ Détails additionnels récupérés');
+        
+        // Mettre à jour seulement les détails additionnels
+        const profile = userData.additionalDetails;
+        if (profile) {
+          setDateOfBirth(profile.dateOfBirth || '');
+          setGender(profile.gender || '');
+          // Utiliser le numéro de contact des détails additionnels si disponible
+          if (profile.contactNumber) {
+            setPhone(profile.contactNumber);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('❌ Erreur récupération détails additionnels:', error);
+      // Pas de problème si ça échoue, on a déjà les données de base
+    }
+  };
+
   const fetchProfileDetails = async () => {
     try {
       setLoadingProfile(true);
-      console.log('📋 Chargement des détails du profil utilisateur...');
+      console.log('📋 Chargement complet des détails du profil utilisateur...');
       
       const token = await getAuthToken();
       const res = await fetch(buildApiUrl('/profile/getUserDetails'), {
@@ -84,16 +176,18 @@ export default function SettingsScreen() {
         const userData = data.data;
         
         // Mettre à jour les informations de base de l'utilisateur
-        console.log('✅ Mise à jour des informations utilisateur:', {
+        console.log('✅ Mise à jour complète des informations utilisateur:', {
           firstName: userData.firstName,
           lastName: userData.lastName,
           email: userData.email,
+          phone: userData.phone,
           image: userData.image ? 'Présente' : 'Absente'
         });
         
         setFirstName(userData.firstName || '');
         setLastName(userData.lastName || '');
         setEmail(userData.email || '');
+        setPhone(userData.phone || '');
         setProfileImage(userData.image || null);
         
         // Mettre à jour les détails additionnels du profil
@@ -107,10 +201,12 @@ export default function SettingsScreen() {
           
           setDateOfBirth(profile.dateOfBirth || '');
           setGender(profile.gender || '');
-          setPhone(profile.contactNumber || '');
+          if (profile.contactNumber) {
+            setPhone(profile.contactNumber);
+          }
         }
         
-        console.log('✅ Profil mis à jour avec succès dans l\'interface');
+        console.log('✅ Profil complet mis à jour avec succès dans l\'interface');
       } else {
         console.error('❌ Erreur API getUserDetails:', data.message);
       }
@@ -365,17 +461,24 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert('Déconnexion', 'Êtes-vous sûr de vouloir vous déconnecter ?', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Se déconnecter',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-          router.replace('/');
-        },
-      },
-    ]);
+    console.log('🚪 FONCTION handleLogout APPELÉE !');
+    
+    // Test direct sans Alert pour voir si ça marche
+    (async () => {
+      try {
+        console.log('🚪 Settings: Début de la déconnexion directe...');
+        
+        // Forcer la redirection AVANT la déconnexion
+        router.replace('/');
+        
+        // Faire la déconnexion après
+        await logout();
+        console.log('✅ Settings: Déconnexion directe réussie');
+        
+      } catch (error) {
+        console.error('❌ Settings: Erreur lors de la déconnexion directe:', error);
+      }
+    })();
   };
 
   return (
@@ -598,7 +701,13 @@ export default function SettingsScreen() {
 
         {/* Déconnexion */}
         <View style={styles.section}>
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <TouchableOpacity 
+            style={styles.logoutButton} 
+            onPress={() => {
+              console.log('🔴 BOUTON DÉCONNEXION CLIQUÉ !');
+              handleLogout();
+            }}
+          >
             <View style={styles.logoutIconContainer}>
               <LogOut size={22} color="#EF4444" />
             </View>
