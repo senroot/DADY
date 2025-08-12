@@ -9,6 +9,7 @@ import {
   RefreshControl,
   FlatList,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Users } from 'lucide-react-native';
@@ -25,13 +26,73 @@ import { getAuthToken } from '../../../utils/authUtils';
 
 function ParentDashboardScreen() {
   const router = useRouter();
-  const { user, token, refreshUser } = useAuth();
+  const { user, token, isLoading: isAuthLoading, refreshUser, forceReloadAuth } = useAuth();
+  
+  // Log initial pour débogage
+  console.log('🏁 ParentDashboardScreen render - isAuthLoading:', isAuthLoading, 'token:', !!token, 'user:', !!user, 'userType:', user?.accountType);
+
+  // DÉBOGAGE : Vérifier directement AsyncStorage au démarrage
+  useEffect(() => {
+    const checkAsyncStorage = async () => {
+      const directToken = await AsyncStorage.getItem('token');
+      const directUser = await AsyncStorage.getItem('user');
+      console.log('🔍 DÉBOGAGE AsyncStorage direct:', {
+        hasDirectToken: !!directToken,
+        hasDirectUser: !!directUser,
+        directTokenPreview: directToken ? directToken.substring(0, 20) + '...' : null,
+        directUserName: directUser ? JSON.parse(directUser).firstName : null,
+        directUserChildren: directUser ? JSON.parse(directUser).children?.length : 0,
+        authContextToken: !!token,
+        authContextUser: !!user,
+        authContextUserName: user?.firstName,
+        authContextChildren: user?.children?.length || 0
+      });
+    };
+    checkAsyncStorage();
+  }, [token, user]);
+
+  // ✅ SOLUTION : Force le rechargement si AuthContext vide mais AsyncStorage plein
+  useEffect(() => {
+    const forceReloadIfNeeded = async () => {
+      // Attendre que l'AuthContext ait fini de charger
+      if (isAuthLoading) {
+        console.log('⏳ Attente fin de chargement AuthContext...');
+        return;
+      }
+
+      // Si l'AuthContext n'a pas de données
+      if (!token || !user) {
+        console.log('🔄 AuthContext vide, vérification AsyncStorage...');
+        
+        // Vérifier AsyncStorage directement
+        const directToken = await AsyncStorage.getItem('token');
+        const directUser = await AsyncStorage.getItem('user');
+        
+        // Si AsyncStorage contient des données mais pas l'AuthContext
+        if (directToken && directUser && (!token || !user)) {
+          console.log('🚨 Données trouvées dans AsyncStorage mais pas dans AuthContext!');
+          console.log('🔄 Force le rechargement...');
+          
+          const success = await forceReloadAuth();
+          if (success) {
+            console.log('✅ Rechargement forcé réussi!');
+          } else {
+            console.log('❌ Échec du rechargement forcé');
+          }
+        }
+      }
+    };
+
+    forceReloadIfNeeded();
+  }, [isAuthLoading, token, user, forceReloadAuth]);
+  
   const [students, setStudents] = useState<any[]>([]);
   const [packs, setPacks] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingPacks, setIsLoadingPacks] = useState(true);
   const [isLoadingStudents, setIsLoadingStudents] = useState(false);
+  const [isLoadingUser, setIsLoadingUser] = useState(false);
   const [networkError, setNetworkError] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -127,56 +188,8 @@ function ParentDashboardScreen() {
         }
 
         // Essayer de charger les enfants si on a récupéré un token
-        if (storedToken) {
-          // Charger les enfants (sans vérifier user.accountType car on ne l'a peut-être pas encore)
-          console.log('👶 Chargement des enfants...');
-          const childrenResponse = await fetchWithRetry(
-            buildApiUrl('/parent/children'),
-            {
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${storedToken}`,
-                'Content-Type': 'application/json',
-              },
-            },
-          );
-
-          if (childrenResponse.ok) {
-            const childrenData = await childrenResponse.json();
-            if (childrenData.success) {
-              setStudents(childrenData.data || []); // Stocker les enfants immédiatement
-              console.log('✅ Enfants chargés:', childrenData.data?.length || 0);
-            }
-          }
-        } else {
-          console.log('⚠️ Pas de token disponible pour charger les données utilisateur');
-        }
-
-        // Essayer de charger les enfants si on a récupéré un token
-        if (storedToken) {
-          // Charger les enfants (sans vérifier user.accountType car on ne l'a peut-être pas encore)
-          console.log('👶 Chargement des enfants...');
-          const childrenResponse = await fetchWithRetry(
-            buildApiUrl('/parent/children'),
-            {
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${storedToken}`,
-                'Content-Type': 'application/json',
-              },
-            },
-          );
-
-          if (childrenResponse.ok) {
-            const childrenData = await childrenResponse.json();
-            if (childrenData.success) {
-              setStudents(childrenData.data || []); // Stocker les enfants immédiatement
-              console.log('✅ Enfants chargés:', childrenData.data?.length || 0);
-            }
-          }
-        } else {
-          console.log('⚠️ Pas de token disponible pour charger les données utilisateur');
-        }
+        // Note: Les enfants sont gérés par un useEffect séparé
+        console.log('📦 Packs chargés avec succès');
 
       } catch (error: any) {
         console.error('❌ Erreur réseau packs:', error);
@@ -188,67 +201,71 @@ function ParentDashboardScreen() {
     fetchPacks();
   }, []); // Chargement uniquement au montage, sans dépendances
 
+  // Fonction pour charger les détails utilisateur
+  const loadUserDetails = useCallback(async () => {
+    if (!token || isLoadingUser) return;
+
+    try {
+      setIsLoadingUser(true);
+      console.log('👤 Chargement des détails utilisateur...');
+
+      const userResponse = await fetchWithRetry(
+        buildApiUrl('/profile/getUserDetails'),
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      if (userResponse.ok) {
+        const userData = await userResponse.json();
+        if (userData.success) {
+          setUserDetails(userData.data);
+          console.log('✅ Détails utilisateur chargés:', userData.data?.firstName || 'N/A');
+        }
+      }
+    } catch (error: any) {
+      console.error('❌ Erreur lors du chargement des détails utilisateur:', error);
+    } finally {
+      setIsLoadingUser(false);
+    }
+  }, [token]);
+
   // Charger les données utilisateur dès que token et user sont disponibles
   useEffect(() => {
-    if (!token || !user) {
-      console.log('⏳ En attente du token et des données utilisateur...');
+    console.log('🔍 useEffect des enfants - isAuthLoading:', isAuthLoading, 'token:', !!token, 'user:', !!user, 'userAccountType:', user?.accountType);
+    
+    // Attendre que l'AuthContext ait fini de charger avant de procéder
+    if (isAuthLoading) {
+      console.log('⏳ AuthContext en cours de chargement...');
       return;
     }
 
-    const fetchUserData = async () => {
-      try {
-        console.log('👤 Chargement des données utilisateur authentifiées...');
+    if (!token || !user) {
+      console.log('⏳ En attente du token et des données utilisateur...', { hasToken: !!token, hasUser: !!user });
+      return;
+    }
 
-        // 1. Charger les détails utilisateur
-        const userResponse = await fetchWithRetry(
-          buildApiUrl('/profile/getUserDetails'),
-          {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          },
-        );
-
-        if (userResponse.ok) {
-          const userData = await userResponse.json();
-          if (userData.success) {
-            setUserDetails(userData.data); // Stocke les détails utilisateur pour affichage
-            console.log('✅ Détails utilisateur chargés:', userData.data?.firstName || 'N/A');
-          }
-        }
-
-        // 2. Charger les enfants si utilisateur parent
-        if (user.accountType === 'Parent') {
-          console.log('👶 Chargement des enfants...');
-          const childrenResponse = await fetchWithRetry(
-            buildApiUrl('/parent/children'),
-            {
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-              },
-            },
-          );
-
-          if (childrenResponse.ok) {
-            const childrenData = await childrenResponse.json();
-            if (childrenData.success) {
-              setStudents(childrenData.data || []); // Stocke les enfants pour affichage
-              console.log('✅ Enfants chargés:', childrenData.data?.length || 0);
-            }
-          }
-        }
-
-      } catch (error: any) {
-        console.error('❌ Erreur lors du chargement des données utilisateur:', error);
+    // Petit délai pour s'assurer que tout est bien initialisé
+    const timer = setTimeout(() => {
+      // Charger les détails utilisateur
+      console.log('🔄 Démarrage du chargement des données utilisateur...');
+      loadUserDetails();
+      
+      // Charger les enfants si c'est un parent
+      if (user.accountType === 'Parent') {
+        console.log('👥 Utilisateur parent détecté - chargement des enfants...');
+        loadStudents();
+      } else {
+        console.log('ℹ️ Utilisateur non-parent détecté:', user.accountType);
       }
-    };
+    }, 100); // Petit délai de 100ms
 
-    fetchUserData();
-  }, [token, user]); // Se déclenche quand token et user deviennent disponibles
+    return () => clearTimeout(timer);
+  }, [token, user, isAuthLoading]); // Simplifier les dépendances
 
   // Fonction pour charger les matières disponibles depuis le backend
   const loadAvailableSubjects = useCallback(async () => {
@@ -440,6 +457,8 @@ function ParentDashboardScreen() {
   }, []);
 
   const loadStudents = useCallback(async () => {
+    console.log('🔍 loadStudents appelée - token:', !!token, 'isLoadingStudents:', isLoadingStudents);
+    
     if (!token) {
       console.log('❌ Pas de token disponible pour charger les enfants');
       return;
@@ -453,7 +472,6 @@ function ParentDashboardScreen() {
 
     try {
       setIsLoadingStudents(true);
-      setIsLoading(true);
       setNetworkError(false);
       console.log('📡 Chargement des enfants...');
 
@@ -523,83 +541,9 @@ function ParentDashboardScreen() {
 
       Alert.alert('Erreur de connexion', errorMessage);
     } finally {
-      setIsLoading(false);
       setIsLoadingStudents(false);
     }
   }, [token]);
-
-  // Charger les données dès que l'utilisateur et le token sont disponibles
-  useEffect(() => {
-    if (
-      user?.accountType === 'Parent' &&
-      token &&
-      students.length === 0 &&
-      !isLoadingStudents
-    ) {
-      console.log('🔄 Chargement initial des données parent...', {
-        userId: user?.id,
-        userFirstName: user?.firstName,
-        hasToken: !!token,
-      });
-
-      // Démarrer le chargement directement sans callback
-      const loadInitialData = async () => {
-        if (!isLoadingStudents) {
-          setIsLoadingStudents(true);
-          setIsLoading(true);
-          setNetworkError(false);
-
-          try {
-            const response = await fetchWithRetry(
-              buildApiUrl(API_CONFIG.ENDPOINTS.PARENT.GET_CHILDREN),
-              {
-                method: 'GET',
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  'Content-Type': 'application/json',
-                },
-              },
-            );
-
-            let data;
-            try {
-              data = await response.json();
-            } catch (jsonError) {
-              console.error('❌ Erreur lecture JSON:', jsonError);
-              if (response.status === 401) {
-                await handleTokenValidation({
-                  success: false,
-                  message: 'token is invalid',
-                });
-                return;
-              }
-              throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const isTokenInvalid = await handleTokenValidation(data);
-            if (isTokenInvalid) return;
-
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            if (data.success) {
-              setStudents(data.data || []);
-              console.log('✅ Enfants chargés:', data.data?.length || 0);
-            }
-          } catch (error: any) {
-            console.error('❌ Erreur réseau enfants:', error);
-            setNetworkError(true);
-          } finally {
-            setIsLoading(false);
-            setIsLoadingStudents(false);
-          }
-        }
-      };
-
-      loadInitialData();
-    }
-  }, [user?.accountType, user?.id, token]); // Supprimer students.length et isLoadingStudents des dépendances
 
   // Charger les matières disponibles au montage
   useEffect(() => {
@@ -615,19 +559,17 @@ function ParentDashboardScreen() {
     }
   }, [students, loadChildrenProgress, user?.accountType]);
 
-  // Recharger les données quand l'écran devient actif
+  // Recharger les données quand l'écran devient actif (seulement si nécessaire)
   useFocusEffect(
     useCallback(() => {
       if (user?.accountType === 'Parent' && token) {
         console.log('🔄 Écran en focus - vérification des données...');
         
-        // Seulement recharger si on n'a pas de données et qu'on n'est pas en train de charger
-        if (students.length === 0 && !isLoading && !isLoadingStudents) {
-          console.log('🔄 Rechargement des données étudiants sur focus...');
-          loadStudents();
-        }
+        // Seulement recharger si on n'a vraiment pas de données et qu'on n'est pas en train de charger
+        // Les données sont déjà chargées par le useEffect principal, donc pas besoin de recharger à chaque focus
+        console.log('� Données actuelles:', { studentsCount: students.length, isLoading, isLoadingStudents });
       }
-    }, [user?.accountType, token]), // Supprimer les dépendances qui changent souvent
+    }, [user?.accountType, token, students.length, isLoading, isLoadingStudents]),
   );
 
   const onRefresh = async () => {
@@ -896,7 +838,7 @@ function ParentDashboardScreen() {
                 <Text style={styles.retryButtonText}>Réessayer</Text>
               </TouchableOpacity>
             </View>
-          ) : isLoading ? (
+          ) : isLoadingStudents ? (
             <View style={styles.loadingContainer}>
               <Text style={styles.loadingText}>Chargement des enfants...</Text>
             </View>

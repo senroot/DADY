@@ -52,6 +52,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   getUserStatus: () => Promise<any>;
+  forceReloadAuth: () => Promise<boolean>; // ✅ Nouvelle fonction
 }
 
 interface SignupData {
@@ -76,11 +77,34 @@ export const useAuth = () => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
+  console.log('🚀 AuthProvider: Composant monté/re-rendu');
+  
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAwaitingSecretCode, setIsAwaitingSecretCode] = useState(false);
   const [isRefreshingUser, setIsRefreshingUser] = useState(false);
+
+  console.log('📊 AuthProvider: État actuel:', {
+    hasUser: !!user,
+    userName: user?.firstName,
+    hasToken: !!token,
+    tokenPreview: token ? token.substring(0, 20) + '...' : null,
+    isLoading,
+    isAwaitingSecretCode
+  });
+
+  // Wrapper pour setUser avec logs
+  const updateUser = (newUser: User | null) => {
+    console.log('👤 AuthContext: updateUser appelé avec:', newUser ? `${newUser.firstName} (${newUser.children?.length || 0} enfants)` : 'null');
+    setUser(newUser);
+  };
+
+  // Wrapper pour setToken avec logs  
+  const updateToken = (newToken: string | null) => {
+    console.log('🔑 AuthContext: updateToken appelé avec:', newToken ? `${newToken.substring(0, 20)}...` : 'null');
+    setToken(newToken);
+  };
 
   const isAuthenticated = useMemo(
     () => !!user && !!token && !isAwaitingSecretCode,
@@ -107,8 +131,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         ]);
 
         // Réinitialiser l'état
-        setUser(null);
-        setToken(null);
+        updateUser(null);
+        updateToken(null);
         setIsAwaitingSecretCode(false);
 
         // Rediriger vers l'accueil
@@ -137,8 +161,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           'tempPhone',
         ]);
 
-        setUser(null);
-        setToken(null);
+        updateUser(null);
+        updateToken(null);
         setIsAwaitingSecretCode(false);
         router.replace('/');
       }
@@ -149,13 +173,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Charger les données d'authentification au démarrage
   useEffect(() => {
+    console.log('🚀 AuthContext useEffect: Démarrage du chargement des données d\'authentification');
     loadStoredAuth();
+  }, []); // Pas de dépendances pour éviter les boucles
+
+  // ✅ NOUVELLE FONCTION : Force le rechargement des données depuis AsyncStorage
+  const forceReloadAuth = useCallback(async () => {
+    try {
+      console.log('🔄 forceReloadAuth: Rechargement forcé des données d\'authentification...');
+      
+      const storedToken = await AsyncStorage.getItem('token');
+      const storedUser = await AsyncStorage.getItem('user');
+      
+      console.log('📱 forceReloadAuth: Données trouvées:', {
+        hasToken: !!storedToken,
+        hasUser: !!storedUser,
+        tokenPreview: storedToken ? storedToken.substring(0, 20) + '...' : null,
+        userName: storedUser ? JSON.parse(storedUser).firstName : null,
+      });
+
+      if (storedToken && storedUser) {
+        const parsedUser = JSON.parse(storedUser);
+        console.log('✅ forceReloadAuth: Restauration des données dans l\'AuthContext...');
+        updateToken(storedToken);
+        updateUser(parsedUser);
+        setIsAwaitingSecretCode(false);
+        console.log('✅ forceReloadAuth: Données restaurées avec succès!');
+        return true;
+      } else {
+        console.log('❌ forceReloadAuth: Aucune donnée à restaurer');
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ forceReloadAuth: Erreur lors du rechargement forcé:', error);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   // ✅ Optimisation : useCallback pour éviter les re-renders
   const loadStoredAuth = useCallback(async () => {
     try {
-      logger.log("🔄 Chargement des données d'authentification...");
+      console.log("🔄 loadStoredAuth: Début du chargement des données d'authentification...");
 
       const storedToken = await AsyncStorage.getItem('token');
       const storedUser = await AsyncStorage.getItem('user');
@@ -163,9 +223,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         await AsyncStorage.getItem('awaitingSecretCode');
       const tempPhone = await AsyncStorage.getItem('tempPhone');
 
-      logger.log('📱 Données trouvées:', {
+      console.log('📱 loadStoredAuth: Données trouvées dans AsyncStorage:', {
         hasToken: !!storedToken,
+        tokenPreview: storedToken ? storedToken.substring(0, 20) + '...' : null,
         hasUser: !!storedUser,
+        userPreview: storedUser ? JSON.parse(storedUser).firstName : null,
         awaitingSecretCode,
         tempPhone,
       });
@@ -179,31 +241,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           phone: tempPhone,
           accountType: 'Parent' as const,
         };
-        setUser(tempUser);
+        updateUser(tempUser);
         setIsAwaitingSecretCode(true);
-        console.log('⏳ Mode attente code secret activé');
+        console.log('⏳ loadStoredAuth: Mode attente code secret activé pour:', tempPhone);
       } else if (storedToken && storedUser) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
+        // Charger les données locales en premier
+        const parsedUser = JSON.parse(storedUser);
+        console.log('✅ loadStoredAuth: Définition du token et user dans l\'état...');
+        updateToken(storedToken);
+        updateUser(parsedUser);
         setIsAwaitingSecretCode(false);
-        console.log(
-          '✅ Authentification restaurée:',
-          JSON.parse(storedUser).firstName || JSON.parse(storedUser).phone,
-        );
+        console.log('✅ loadStoredAuth: Authentification restaurée depuis le stockage local:', {
+          name: parsedUser.firstName || parsedUser.phone,
+          childrenCount: parsedUser.children?.length || 0,
+          tokenSet: !!storedToken
+        });
 
-        // Optionnel: rafraîchir les données utilisateur depuis le serveur
-        try {
-          await refreshUserFromServer(storedToken);
-        } catch (e) {
-          console.log(
-            '⚠️ Impossible de rafraîchir depuis le serveur, utilisation des données locales',
-          );
-        }
+        // APRÈS avoir chargé les données locales, essayer de rafraîchir depuis le serveur
+        // Cela se fait en arrière-plan sans bloquer l'interface
+        setTimeout(async () => {
+          try {
+            console.log('🔄 loadStoredAuth: Lancement du rafraîchissement serveur en arrière-plan...');
+            await refreshUserFromServer(storedToken);
+          } catch (e) {
+            console.log(
+              '⚠️ loadStoredAuth: Impossible de rafraîchir depuis le serveur, utilisation des données locales',
+            );
+          }
+        }, 100); // Petit délai pour laisser l'interface se charger d'abord
       } else {
-        logger.log('❌ Aucune session trouvée');
+        console.log('❌ loadStoredAuth: Aucune session trouvée - storedToken:', !!storedToken, 'storedUser:', !!storedUser);
       }
     } catch (error) {
-      logger.error("❌ Erreur lors du chargement de l'auth:", error);
+      console.error("❌ loadStoredAuth: Erreur lors du chargement de l'auth:", error);
       await AsyncStorage.multiRemove([
         'token',
         'user',
@@ -211,17 +281,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         'tempPhone',
       ]); // Nettoyer en cas d'erreur
     } finally {
+      console.log('🏁 loadStoredAuth: Définition de isLoading à false');
       setIsLoading(false);
     }
   }, []); // ✅ Pas de dépendances car on utilise les setters
 
   const refreshUserFromServer = async (authToken?: string) => {
     const tokenToUse = authToken || token;
-    if (!tokenToUse) return;
+    if (!tokenToUse) {
+      logger.log('❌ refreshUserFromServer: Pas de token disponible');
+      return;
+    }
 
     // Éviter les appels multiples
-    if (isRefreshingUser) return;
+    if (isRefreshingUser) {
+      logger.log('⚠️ refreshUserFromServer: Rafraîchissement déjà en cours');
+      return;
+    }
 
+    logger.log('🔄 refreshUserFromServer: Début du rafraîchissement des données utilisateur');
     setIsRefreshingUser(true);
     try {
       const response = await fetchWithRetry(
@@ -234,20 +312,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         },
       );
 
+      logger.log('📡 refreshUserFromServer: Réponse reçue, status:', response.status);
+
       const data = await handleApiResponse(response);
-      if (!data) return;
+      if (!data) {
+        logger.log('❌ refreshUserFromServer: handleApiResponse a retourné null');
+        return;
+      }
+
+      logger.log('📋 refreshUserFromServer: Données reçues:', {
+        success: data.success,
+        hasData: !!(data.data || data.user),
+        childrenCount: (data.data || data.user)?.children?.length || 0
+      });
 
       if (data.success && (data.data || data.user)) {
         const updatedUser = data.data || data.user;
-        setUser(updatedUser);
+        updateUser(updatedUser);
         await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
-        console.log('🔄 Données utilisateur mises à jour depuis le serveur');
+        logger.log('✅ refreshUserFromServer: Données utilisateur mises à jour depuis le serveur');
+      } else {
+        logger.log('❌ refreshUserFromServer: Données non valides reçues du serveur');
       }
     } catch (error) {
-      console.error('⚠️ Erreur lors du rafraîchissement:', error);
+      logger.error('⚠️ refreshUserFromServer: Erreur lors du rafraîchissement:', error);
       // Ne pas lever d'erreur ici, utiliser les données locales
     } finally {
       setIsRefreshingUser(false);
+      logger.log('🏁 refreshUserFromServer: Terminé');
     }
   };
 
@@ -283,8 +375,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           accountType: 'Parent' as const,
         };
 
-        setUser(tempUser);
-        setToken('');
+        updateUser(tempUser);
+        updateToken('');
         setIsAwaitingSecretCode(true);
 
         await AsyncStorage.setItem('tempPhone', data.phone || phone);
@@ -298,8 +390,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       if (data.token && data.user) {
         const { token: authToken, user: userData } = data;
 
-        setToken(authToken);
-        setUser(userData);
+        updateToken(authToken);
+        updateUser(userData);
         setIsAwaitingSecretCode(false);
 
         await AsyncStorage.setItem('token', authToken);
@@ -347,8 +439,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const { token: authToken, user: userData } = data;
 
-      setToken(authToken);
-      setUser(userData);
+      updateToken(authToken);
+      updateUser(userData);
       setIsAwaitingSecretCode(false);
 
       await AsyncStorage.setItem('token', authToken);
@@ -553,8 +645,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         'tempPhone',
       ]);
 
-      setUser(null);
-      setToken(null);
+      updateUser(null);
+      updateToken(null);
       setIsAwaitingSecretCode(false);
 
       console.log('✅ Déconnexion réussie');
@@ -604,7 +696,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         email: updatedUser?.email,
       });
 
-      setUser(updatedUser);
+      updateUser(updatedUser);
       await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
 
       console.log('✅ Données utilisateur actualisées dans le contexte');
@@ -631,6 +723,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     getUserStatus,
     isAuthenticated,
     isAwaitingSecretCode,
+    forceReloadAuth, // ✅ Nouvelle fonction exposée
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

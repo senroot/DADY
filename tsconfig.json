@@ -4,6 +4,11 @@
     "strict": false,
     "skipLibCheck": true,
     "noImplicitAny": false,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "target": "es2020",
+    "module": "esnext",
+    "moduleResolution": "node",
     "paths": {
       "@/*": ["./*"]
     }
@@ -12,7 +17,9 @@
     "**/*.ts",
     "**/*.tsx",
     ".expo/types/**/*.ts",
-    "expo-env.d.ts",
-    "nativewind-env.d.ts"
+    "expo-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules"
   ]
 }
