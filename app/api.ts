@@ -2,7 +2,7 @@
 // ...
 // Configuration de l'API
 export const API_CONFIG = {
-  BASE_URL: 'http://localhost:4000/api/v1', // Pour émulateur Android
+  BASE_URL: 'https://server-u1wp.onrender.com/api/v1', // Pour émulateur Android
   ENDPOINTS: {
     AUTH: {
       LOGIN: '/auth/login',
