@@ -13,7 +13,9 @@
     "lint": "expo lint",
     "type-check": "npx tsc --noEmit",
     "clear-cache": "expo r -c",
-    "optimize": "npm run clear-cache && npm run type-check"
+    "optimize": "npm run clear-cache && npm run type-check",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
